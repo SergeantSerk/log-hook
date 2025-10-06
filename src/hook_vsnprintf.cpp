@@ -1,4 +1,4 @@
-// hook_vsnprintf_comprehensive_wsprintfw.cpp - Hooks _vsnprintf and wsprintfW from ALL loaded modules
+// hook_vsnprintf_comprehensive_wsprintfw_sprintfs.cpp
 #include <windows.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -23,7 +23,8 @@ struct ModuleHook
     bool isHooked;
     DWORD moduleBase;
     DWORD moduleSize;
-    bool isWide; // true for wsprintfW hooks
+    bool isWide; // true for wsprintfW
+    bool isSprintfSecure; // true for sprintf_s
 };
 
 // Global variables
@@ -48,7 +49,11 @@ int __cdecl Hooked_vsnprintf_9(char *buffer, size_t count, const char *format, v
 // wsprintfW hook (single function reused for multiple modules)
 int __cdecl Hooked_wsprintfW(wchar_t *buffer, const wchar_t *format, ...);
 
-// Array of hook functions for _vsnprintf
+// sprintf_s hook (single function reused for multiple modules)
+// signature: int sprintf_s(char *buffer, size_t sizeOfBuffer, const char *format, ...);
+int __cdecl Hooked_sprintf_s(char *buffer, size_t sizeOfBuffer, const char *format, ...);
+
+// Array of hook functions for _vsnprintf (indexed)
 void *g_hookFunctions[] = {
     (void *)Hooked_vsnprintf_0, (void *)Hooked_vsnprintf_1, (void *)Hooked_vsnprintf_2,
     (void *)Hooked_vsnprintf_3, (void *)Hooked_vsnprintf_4, (void *)Hooked_vsnprintf_5,
@@ -74,11 +79,11 @@ bool CreateConsoleWindow()
 
     std::ios_base::sync_with_stdio(true);
 
-    SetConsoleTitleA("Comprehensive _vsnprintf + wsprintfW Hook Logger");
+    SetConsoleTitleA("Comprehensive Hook Logger (_vsnprintf, wsprintfW, sprintf_s)");
     g_hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
     SetConsoleTextAttribute(g_hConsole, FOREGROUND_GREEN | FOREGROUND_INTENSITY);
-    printf("=== Comprehensive _vsnprintf + wsprintfW Hook Console ===\n");
+    printf("=== Comprehensive Hook Console ===\n");
     SetConsoleTextAttribute(g_hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
 
     g_consoleAllocated = true;
@@ -98,7 +103,7 @@ bool InitializeLogFile()
     fopen_s(&g_logFile, logPath, "w");
     if (g_logFile)
     {
-        fprintf(g_logFile, "=== Comprehensive _vsnprintf + wsprintfW Hook Log ===\n");
+        fprintf(g_logFile, "=== Comprehensive Hook Log ===\n");
         fprintf(g_logFile, "Process ID: %d\n", GetCurrentProcessId());
         fprintf(g_logFile, "Log file: %s\n\n", logPath);
         fflush(g_logFile);
@@ -135,7 +140,7 @@ void LogVsnprintfCall(const char *moduleName, char *buffer, int result, size_t c
     {
         char logMessage[2048];
         sprintf_s(logMessage, sizeof(logMessage),
-                  "[%02d:%02d:%02d.%03d] #%d %s::_vsnprintf(len=%d) @ 0x%p: %s\n",
+                  "[%02d:%02d:%02d.%03d] #%d %s::(_vsnprintf len=%d) @ 0x%p: %s\n",
                   st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
                   g_callCounter, moduleName, result, caller, safe_buffer);
 
@@ -243,25 +248,23 @@ IMPLEMENT_HOOK_FUNCTION(7)
 IMPLEMENT_HOOK_FUNCTION(8)
 IMPLEMENT_HOOK_FUNCTION(9)
 
-// Generic Hooked_wsprintfW implementation (formats the buffer using vsnwprintf and logs)
+// Generic Hooked_wsprintfW implementation (formats the buffer using _vsnwprintf and logs)
 int __cdecl Hooked_wsprintfW(wchar_t *buffer, const wchar_t *format, ...)
 {
     if (buffer == nullptr || format == nullptr)
         return -1;
 
-    // Format the wide buffer using a large temporary limit (wsprintfW is unsafe by design)
     va_list args;
     va_start(args, format);
-    // Use a generous max to emulate wsprintfW behaviour (unsafe)
+    // emulate wsprintfW (unsafe) with a large cap
     int result = _vsnwprintf(buffer, 32767, format, args);
     va_end(args);
 
-    // Try to resolve the module name from the return address (caller)
+    // Find module name from return address
     void *caller = _ReturnAddress();
     const char *moduleName = "unknown";
     for (auto &h : g_hooks)
     {
-        // Check only the hooks that have a module base/size set
         DWORD base = h.moduleBase;
         DWORD size = h.moduleSize;
         if (base != 0 && size != 0)
@@ -276,16 +279,50 @@ int __cdecl Hooked_wsprintfW(wchar_t *buffer, const wchar_t *format, ...)
         }
     }
 
-    // Log the wsprintfW call
     LogWsprintfWCall(moduleName, buffer, result);
-
     return result;
 }
 
-// Function to enumerate all loaded modules and find _vsnprintf and wsprintfW
+// Generic Hooked_sprintf_s implementation (formats the buffer using vsnprintf_s and logs)
+int __cdecl Hooked_sprintf_s(char *buffer, size_t sizeOfBuffer, const char *format, ...)
+{
+    if (buffer == nullptr || format == nullptr)
+        return -1;
+
+    va_list args;
+    va_start(args, format);
+    // Use _TRUNCATE behavior to avoid buffer overrun, emulate sprintf_s
+    int result = vsnprintf_s(buffer, sizeOfBuffer, _TRUNCATE, format, args);
+    va_end(args);
+
+    // Find module name from return address
+    void *caller = _ReturnAddress();
+    const char *moduleName = "unknown";
+    for (auto &h : g_hooks)
+    {
+        DWORD base = h.moduleBase;
+        DWORD size = h.moduleSize;
+        if (base != 0 && size != 0)
+        {
+            uintptr_t c = (uintptr_t)caller;
+            uintptr_t b = (uintptr_t)base;
+            if (c >= b && c < b + (uintptr_t)size)
+            {
+                moduleName = h.moduleName.c_str();
+                break;
+            }
+        }
+    }
+
+    // Log using the same narrow logger; only logs messages that start with '['
+    LogVsnprintfCall(moduleName, buffer, result, sizeOfBuffer, format);
+    return result;
+}
+
+// Function to enumerate all loaded modules and find _vsnprintf, wsprintfW and sprintf_s
 void EnumerateAndHookModules()
 {
-    printf("\nScanning ALL loaded modules for _vsnprintf and wsprintfW...\n");
+    printf("\nScanning ALL loaded modules for _vsnprintf, wsprintfW, and sprintf_s...\n");
 
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetCurrentProcessId());
     if (hSnapshot == INVALID_HANDLE_VALUE)
@@ -298,12 +335,13 @@ void EnumerateAndHookModules()
     me32.dwSize = sizeof(MODULEENTRY32);
 
     int moduleCount = 0;
+    const int MAX_HOOKS = 50; // increased limit
     if (Module32First(hSnapshot, &me32))
     {
         do
         {
-            if (moduleCount >= 10)
-                break; // Limit to 10 hooks due to hook function limit for vsnprintf
+            if (moduleCount >= MAX_HOOKS)
+                break;
 
             printf("Checking module: %s (Base: 0x%p, Size: 0x%X)\n",
                    me32.szModule, me32.modBaseAddr, me32.modBaseSize);
@@ -321,11 +359,12 @@ void EnumerateAndHookModules()
                     hook.hModule = hMod;
                     hook.moduleName = me32.szModule;
                     hook.originalFunction = vsnprintfAddr;
-                    hook.hookFunction = g_hookFunctions[moduleCount];
+                    hook.hookFunction = g_hookFunctions[moduleCount % (sizeof(g_hookFunctions)/sizeof(g_hookFunctions[0]))];
                     hook.isHooked = false;
                     hook.moduleBase = (DWORD)me32.modBaseAddr;
                     hook.moduleSize = me32.modBaseSize;
                     hook.isWide = false;
+                    hook.isSprintfSecure = false;
 
                     g_hooks.push_back(hook);
                     moduleCount++;
@@ -359,11 +398,33 @@ void EnumerateAndHookModules()
                     hook.hModule = hMod;
                     hook.moduleName = me32.szModule;
                     hook.originalFunction = wsprintfWAddr;
-                    hook.hookFunction = (void *)Hooked_wsprintfW; // use the generic wide hook
+                    hook.hookFunction = (void *)Hooked_wsprintfW; // generic wide hook
                     hook.isHooked = false;
                     hook.moduleBase = (DWORD)me32.modBaseAddr;
                     hook.moduleSize = me32.modBaseSize;
                     hook.isWide = true;
+                    hook.isSprintfSecure = false;
+
+                    g_hooks.push_back(hook);
+                    moduleCount++;
+                }
+
+                // Check for sprintf_s (secure narrow)
+                void *sprintf_s_addr = GetProcAddress(hMod, "sprintf_s");
+                if (sprintf_s_addr)
+                {
+                    printf("  -> sprintf_s found at address: 0x%p\n", sprintf_s_addr);
+
+                    ModuleHook hook = {0};
+                    hook.hModule = hMod;
+                    hook.moduleName = me32.szModule;
+                    hook.originalFunction = sprintf_s_addr;
+                    hook.hookFunction = (void *)Hooked_sprintf_s; // generic sprintf_s hook
+                    hook.isHooked = false;
+                    hook.moduleBase = (DWORD)me32.modBaseAddr;
+                    hook.moduleSize = me32.modBaseSize;
+                    hook.isWide = false;
+                    hook.isSprintfSecure = true;
 
                     g_hooks.push_back(hook);
                     moduleCount++;
@@ -391,11 +452,21 @@ void EnumerateAndHookModules()
         {
             hook.isHooked = true;
             hookCount++;
-            printf("Successfully hooked %s in %s\n", hook.isWide ? "wsprintfW" : "_vsnprintf", hook.moduleName.c_str());
+            if (hook.isWide)
+                printf("Successfully hooked wsprintfW in %s\n", hook.moduleName.c_str());
+            else if (hook.isSprintfSecure)
+                printf("Successfully hooked sprintf_s in %s\n", hook.moduleName.c_str());
+            else
+                printf("Successfully hooked _vsnprintf in %s\n", hook.moduleName.c_str());
         }
         else
         {
-            printf("Failed to hook %s in %s (error: %d)\n", hook.isWide ? "wsprintfW" : "_vsnprintf", hook.moduleName.c_str(), result);
+            if (hook.isWide)
+                printf("Failed to hook wsprintfW in %s (error: %d)\n", hook.moduleName.c_str(), result);
+            else if (hook.isSprintfSecure)
+                printf("Failed to hook sprintf_s in %s (error: %d)\n", hook.moduleName.c_str(), result);
+            else
+                printf("Failed to hook _vsnprintf in %s (error: %d)\n", hook.moduleName.c_str(), result);
         }
     }
 
@@ -407,7 +478,7 @@ void EnumerateAndHookModules()
 
     if (hookCount > 0)
     {
-        printf("Ready to intercept _vsnprintf and wsprintfW calls from ALL modules!\n");
+        printf("Ready to intercept _vsnprintf, wsprintfW, and sprintf_s calls from ALL modules!\n");
         printf("Debug parameter calls are filtered out for cleaner output.\n\n");
     }
 }
@@ -443,7 +514,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         CreateConsoleWindow();
         InitializeLogFile();
 
-        printf("=== Comprehensive _vsnprintf + wsprintfW Hook DLL Loaded ===\n");
+        printf("=== Comprehensive Hook DLL Loaded ===\n");
         printf("Process ID: %d\n", GetCurrentProcessId());
         printf("DLL Base Address: 0x%p\n", hModule);
 
