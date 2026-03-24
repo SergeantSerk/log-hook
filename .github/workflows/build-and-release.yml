@@ -1,0 +1,67 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build Type'
+        required: true
+        default: 'Release'
+        type: choice
+        options:
+          - Release
+          - Debug
+          - MinSizeRel
+          - RelWithDebInfo
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=${{ github.event.inputs.build_type || 'Release' }}
+
+      - name: Build
+        run: |
+          cmake --build build --config ${{ github.event.inputs.build_type || 'Release' }}
+
+      - name: Package Artifacts
+        shell: pwsh
+        run: |
+          $buildType = "${{ github.event.inputs.build_type || 'Release' }}"
+          mkdir artifacts
+          if (Test-Path "build/$buildType/HookDLL.dll") {
+            copy "build/$buildType/HookDLL.dll" artifacts/
+          }
+          if (Test-Path "build/$buildType/injector.exe") {
+            copy "build/$buildType/injector.exe" artifacts/
+          }
+
+      - name: Create Release
+        uses: softprop/action-gh-release@v2
+        if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Build v${{ github.run_number }}
+          files: |
+            artifacts/HookDLL.dll
+            artifacts/injector.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
