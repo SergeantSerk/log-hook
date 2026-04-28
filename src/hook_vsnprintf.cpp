@@ -140,9 +140,9 @@ void LogVsnprintfCall(const char *moduleName, char *buffer, int result, size_t c
     {
         char logMessage[2048];
         sprintf_s(logMessage, sizeof(logMessage),
-                  "[%02d:%02d:%02d.%03d] #%d %s::(_vsnprintf len=%d) @ 0x%p: %s\n",
+                  "[%02d:%02d:%02d.%03d] - %s\n",
                   st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
-                  g_callCounter, moduleName, result, caller, safe_buffer);
+                  safe_buffer);
 
         // Console output
         if (g_hConsole != NULL)
@@ -200,9 +200,9 @@ void LogWsprintfWCall(const char *moduleName, const wchar_t *wbuffer, int result
 
     char logMessage[4096];
     sprintf_s(logMessage, sizeof(logMessage),
-              "[%02d:%02d:%02d.%03d] #%d %s::wsprintfW(len=%d) @ 0x%p: %s\n",
+              "[%02d:%02d:%02d.%03d] - %s\n",
               st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
-              g_callCounter, moduleName, result, caller, utf8.c_str());
+              utf8.c_str());
 
     // Console output
     if (g_hConsole != NULL)
