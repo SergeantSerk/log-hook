@@ -8,6 +8,7 @@
 #include <tlhelp32.h>
 #include <psapi.h>
 #include <wchar.h>
+#include <string.h>
 #include "detours.h"
 
 #pragma comment(lib, "detours.lib")
@@ -31,6 +32,7 @@ struct ModuleHook
 static HANDLE g_hConsole = NULL;
 static FILE *g_logFile = NULL;
 static bool g_consoleAllocated = false;
+static HMODULE g_hModule = NULL;
 static std::vector<ModuleHook> g_hooks;
 static int g_callCounter = 0;
 
@@ -52,6 +54,48 @@ int __cdecl Hooked_wsprintfW(wchar_t *buffer, const wchar_t *format, ...);
 // sprintf_s hook (single function reused for multiple modules)
 // signature: int sprintf_s(char *buffer, size_t sizeOfBuffer, const char *format, ...);
 int __cdecl Hooked_sprintf_s(char *buffer, size_t sizeOfBuffer, const char *format, ...);
+
+bool BuildAdjacentLogPath(char *logPath, size_t logPathSize)
+{
+    if (logPath == nullptr || logPathSize == 0)
+        return false;
+
+    logPath[0] = '\0';
+
+    DWORD length = 0;
+    if (g_hModule != NULL)
+        length = GetModuleFileNameA(g_hModule, logPath, (DWORD)logPathSize);
+
+    if (length == 0 || length >= logPathSize)
+        length = GetModuleFileNameA(NULL, logPath, (DWORD)logPathSize);
+
+    if (length == 0 || length >= logPathSize)
+    {
+        length = GetCurrentDirectoryA((DWORD)logPathSize, logPath);
+        if (length == 0 || length >= logPathSize)
+            return false;
+
+        if (logPath[length - 1] != '\\' && logPath[length - 1] != '/')
+        {
+            if (strcat_s(logPath, logPathSize, "\\") != 0)
+                return false;
+        }
+    }
+    else
+    {
+        char *lastSlash = strrchr(logPath, '\\');
+        char *lastForwardSlash = strrchr(logPath, '/');
+        if (lastForwardSlash != nullptr && (lastSlash == nullptr || lastForwardSlash > lastSlash))
+            lastSlash = lastForwardSlash;
+
+        if (lastSlash == nullptr)
+            logPath[0] = '\0';
+        else
+            lastSlash[1] = '\0';
+    }
+
+    return strcat_s(logPath, logPathSize, "many_printf_comprehensive.log") == 0;
+}
 
 // Array of hook functions for _vsnprintf (indexed)
 void *g_hookFunctions[] = {
@@ -97,8 +141,8 @@ bool InitializeLogFile()
         return true;
 
     char logPath[MAX_PATH];
-    GetTempPathA(MAX_PATH, logPath);
-    strcat_s(logPath, MAX_PATH, "many_printf_comprehensive.log");
+    if (!BuildAdjacentLogPath(logPath, MAX_PATH))
+        strcpy_s(logPath, MAX_PATH, "many_printf_comprehensive.log");
 
     fopen_s(&g_logFile, logPath, "w");
     if (g_logFile)
@@ -509,6 +553,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
     switch (ul_reason_for_call)
     {
     case DLL_PROCESS_ATTACH:
+        g_hModule = hModule;
         DisableThreadLibraryCalls(hModule);
 
         CreateConsoleWindow();
