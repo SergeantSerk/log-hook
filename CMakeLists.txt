@@ -41,7 +41,7 @@ add_custom_target(build_detours_core
 # Source files
 #set(HOOK_SRC src/hook_outputdebugstring.cpp) # - basic (just like a debugger)
 #set(HOOK_SRC src/simple_outputdebugstring_hook.cpp) # - basic (just like a debugger)
-set(HOOK_SRC src/hook_vsnprintf.cpp) # - works (extremely verbose, logs to %temp%)
+set(HOOK_SRC src/hook_vsnprintf.cpp) # - works (extremely verbose, logs beside the hook DLL)
 #set(HOOK_SRC src/hook_format.cpp)
 set(INJ_SRC src/injector.cpp) # - injector
 

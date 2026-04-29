@@ -1,4 +1,4 @@
-// hook_vsnprintf_comprehensive_wsprintfw_sprintfs.cpp
+// printf_hook.cpp
 #include <windows.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -94,7 +94,7 @@ bool BuildAdjacentLogPath(char *logPath, size_t logPathSize)
             lastSlash[1] = '\0';
     }
 
-    return strcat_s(logPath, logPathSize, "many_printf_comprehensive.log") == 0;
+    return strcat_s(logPath, logPathSize, "printf_hook.log") == 0;
 }
 
 // Array of hook functions for _vsnprintf (indexed)
@@ -123,11 +123,11 @@ bool CreateConsoleWindow()
 
     std::ios_base::sync_with_stdio(true);
 
-    SetConsoleTitleA("Comprehensive Hook Logger (_vsnprintf, wsprintfW, sprintf_s)");
+    SetConsoleTitleA("Printf Hook Logger (_vsnprintf, wsprintfW, sprintf_s)");
     g_hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
     SetConsoleTextAttribute(g_hConsole, FOREGROUND_GREEN | FOREGROUND_INTENSITY);
-    printf("=== Comprehensive Hook Console ===\n");
+    printf("=== Printf Hook Console ===\n");
     SetConsoleTextAttribute(g_hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
 
     g_consoleAllocated = true;
@@ -142,12 +142,12 @@ bool InitializeLogFile()
 
     char logPath[MAX_PATH];
     if (!BuildAdjacentLogPath(logPath, MAX_PATH))
-        strcpy_s(logPath, MAX_PATH, "many_printf_comprehensive.log");
+        strcpy_s(logPath, MAX_PATH, "printf_hook.log");
 
     fopen_s(&g_logFile, logPath, "w");
     if (g_logFile)
     {
-        fprintf(g_logFile, "=== Comprehensive Hook Log ===\n");
+        fprintf(g_logFile, "=== Printf Hook Log ===\n");
         fprintf(g_logFile, "Process ID: %d\n", GetCurrentProcessId());
         fprintf(g_logFile, "Log file: %s\n\n", logPath);
         fflush(g_logFile);
@@ -559,7 +559,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         CreateConsoleWindow();
         InitializeLogFile();
 
-        printf("=== Comprehensive Hook DLL Loaded ===\n");
+        printf("=== Printf Hook DLL Loaded ===\n");
         printf("Process ID: %d\n", GetCurrentProcessId());
         printf("DLL Base Address: 0x%p\n", hModule);
 
@@ -573,7 +573,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
         if (g_logFile)
         {
-            fprintf(g_logFile, "\n=== Comprehensive hook session ended ===\n");
+            fprintf(g_logFile, "\n=== Printf hook session ended ===\n");
             fprintf(g_logFile, "Total intercepted calls: %d\n", g_callCounter);
             fclose(g_logFile);
             g_logFile = NULL;
@@ -581,7 +581,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
         if (g_consoleAllocated)
         {
-            printf("\nComprehensive hook DLL unloading...\n");
+            printf("\nPrintf hook DLL unloading...\n");
             printf("Total intercepted calls: %d\n", g_callCounter);
             FreeConsole();
         }
