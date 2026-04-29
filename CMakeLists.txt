@@ -18,23 +18,25 @@ FetchContent_Declare(
   GIT_TAG v4.0.1
 )
 
-FetchContent_MakeAvailable(Detours)
-
-# Custom target to build only the core Detours library (not samples)
-add_custom_target(build_detours_core
-    COMMAND ${CMAKE_COMMAND} -E chdir ${detours_SOURCE_DIR}/src nmake
-    COMMENT "Building Microsoft Detours core library only"
-    BYPRODUCTS 
-        ${detours_SOURCE_DIR}/lib.X86/detours.lib
-        ${detours_SOURCE_DIR}/lib.X64/detours.lib
-)
-
 # Determine architecture and set library path
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(DETOURS_LIB_DIR "${detours_SOURCE_DIR}/lib.X64")
+    set(DETOURS_TARGET_PROCESSOR "X64")
 else()
-    set(DETOURS_LIB_DIR "${detours_SOURCE_DIR}/lib.X86")
+    set(DETOURS_TARGET_PROCESSOR "X86")
 endif()
+
+FetchContent_MakeAvailable(Detours)
+set(DETOURS_LIB_DIR "${detours_SOURCE_DIR}/lib.${DETOURS_TARGET_PROCESSOR}")
+
+# Custom target to build only the core Detours library (not samples).
+# Detours' nmake files default from the host process architecture, so pass the
+# target explicitly for x86 cross builds running from a 64-bit shell.
+add_custom_target(build_detours_core
+    COMMAND ${CMAKE_COMMAND} -E chdir ${detours_SOURCE_DIR}/src nmake /nologo DETOURS_TARGET_PROCESSOR=${DETOURS_TARGET_PROCESSOR}
+    COMMENT "Building Microsoft Detours core library only (${DETOURS_TARGET_PROCESSOR})"
+    BYPRODUCTS
+        ${DETOURS_LIB_DIR}/detours.lib
+)
 
 # Source files
 #set(HOOK_SRC src/hook_outputdebugstring.cpp) # - basic (just like a debugger)
